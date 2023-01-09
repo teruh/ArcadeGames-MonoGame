@@ -1,5 +1,5 @@
-﻿using System;
-using System.Collections.Generic;
+﻿using System.Collections.Generic;
+using System.Diagnostics;
 using Microsoft.Xna.Framework;
 using Microsoft.Xna.Framework.Graphics;
 using Microsoft.Xna.Framework.Input;
@@ -8,8 +8,8 @@ namespace Breakout
 {
     public class BreakoutGame : Game
     {
-        private readonly int WINDOW_WIDTH = 1280;
-        private readonly int WINDOW_HEIGHT = 720;
+        public readonly int WINDOW_WIDTH = 1280;
+        public readonly int WINDOW_HEIGHT = 720;
 
         /// <summary>
         /// Player paddle width in pixels
@@ -49,17 +49,11 @@ namespace Breakout
         private GraphicsDeviceManager _graphics;
         private SpriteBatch _spriteBatch;
 
-        private Vector2 _playerPosition;
+        private Paddle _paddle;
 
-        private Vector2 _ballPosition;
-        private Vector2 _ballVelocity;
+        private Ball _ball;
 
-        private Texture2D _playerTexture;
-        private Texture2D _ballTexture;
-
-        private Random _random;
-
-        private Dictionary<Color, Texture2D> _brickTextures;
+        private List<Brick> _bricks;
         private List<Color> _brickColors;
 
         public BreakoutGame()
@@ -67,8 +61,6 @@ namespace Breakout
             _graphics = new GraphicsDeviceManager(this);
             Content.RootDirectory = "Content";
             IsMouseVisible = false;
-
-            _random = new Random();
         }
 
         protected override void Initialize()
@@ -77,17 +69,19 @@ namespace Breakout
             _graphics.PreferredBackBufferHeight = WINDOW_HEIGHT;
             _graphics.ApplyChanges();
 
-            // Start ball at the center of the screen
-            _ballPosition = new Vector2(_graphics.GraphicsDevice.Viewport.Bounds.Width / 2, _graphics.GraphicsDevice.Viewport.Bounds.Height / 2);
-
-            // Start ball at random velocity moving towards the bottom of the screen
-            _ballVelocity = new Vector2(_random.Next(2) * 2 - 1, 1);
-            _ballVelocity.Normalize();
-
-            _brickTextures = new Dictionary<Color, Texture2D>();
-
             // The colors of each brick row
-            _brickColors = new List<Color>() { Color.Crimson, Color.Tomato, Color.Orange, Color.Yellow, Color.SeaGreen, Color.Turquoise, Color.DodgerBlue, Color.SlateBlue };
+            // 1 color = 1 row
+            _brickColors = new List<Color>() { 
+                Color.Crimson, 
+                Color.Tomato, 
+                Color.Orange, 
+                Color.Yellow, 
+                Color.SeaGreen, 
+                Color.Turquoise, 
+                Color.DodgerBlue, 
+                Color.SlateBlue };
+
+            _bricks = new List<Brick>();
 
             base.Initialize();
         }
@@ -96,16 +90,25 @@ namespace Breakout
         {
             _spriteBatch = new SpriteBatch(GraphicsDevice);
 
-            _playerTexture = new Texture2D(this._graphics.GraphicsDevice, 1, 1);
-            _playerTexture.SetData(new Color[] { Color.White });
+            _paddle = new Paddle(this, PADDLE_WIDTH, PADDLE_HEIGHT, Vector2.Zero, Color.White);
 
-            _ballTexture = new Texture2D(this._graphics.GraphicsDevice, 1, 1);
-            _ballTexture.SetData(new Color[] { Color.White });
+            _ball = new Ball(this, 
+                BALL_WIDTH, 
+                BALL_HEIGHT, 
+                new Vector2(_graphics.GraphicsDevice.Viewport.Bounds.Width / 2, 
+                _graphics.GraphicsDevice.Viewport.Bounds.Height / 2), 
+                Color.White, 
+                BALL_SPEED);
 
-            foreach (Color color in _brickColors)
+            // Build bricks
+            // Columns
+            for (int i = 0; i < WINDOW_WIDTH / BRICK_WIDTH; i++)
             {
-                _brickTextures.Add(color, new Texture2D(this._graphics.GraphicsDevice, 1, 1));
-                _brickTextures[color].SetData(new Color[] { color });
+                // Rows
+                for (int j = 0; j < _brickColors.Count; j++)
+                {
+                    _bricks.Add(new Brick(this, BRICK_WIDTH, BRICK_HEIGHT, new Vector2(i * BRICK_WIDTH + i, j * BRICK_HEIGHT + j), _brickColors[j]));
+                }
             }
         }
 
@@ -116,18 +119,18 @@ namespace Breakout
                 Exit();
             }
 
-            _ballPosition += _ballVelocity * BALL_SPEED * (float)gameTime.ElapsedGameTime.TotalSeconds;
-            _playerPosition = new Vector2(MathHelper.Clamp(Mouse.GetState().X, 0, WINDOW_WIDTH - PADDLE_WIDTH), WINDOW_HEIGHT - PADDLE_HEIGHT);
+            _paddle.Update(gameTime);
+            _ball.Update(gameTime);
 
             // Check for ball & paddle collison with AABB
             // TODO: Move this, of course...
-            if (_playerPosition.X < _ballPosition.X + BALL_WIDTH &&
-                _playerPosition.X + PADDLE_WIDTH > BALL_WIDTH &&
-                _playerPosition.Y < _ballPosition.Y + BALL_HEIGHT &&
-                PADDLE_HEIGHT + _playerPosition.Y > _ballPosition.Y)
-            {
-                _ballVelocity *= -1;
-            }
+            //if (_playerPosition.X < _ball.Position.X + BALL_WIDTH &&
+            //    _playerPosition.X + PADDLE_WIDTH > BALL_WIDTH &&
+            //    _playerPosition.Y < _ball.Position.Y + BALL_HEIGHT &&
+            //    PADDLE_HEIGHT + _playerPosition.Y > _ball.Position.Y)
+            //{
+            //    Debug.WriteLine("Collison between BALL and PADDLE!");
+            //}
 
             base.Update(gameTime);
         }
@@ -138,22 +141,12 @@ namespace Breakout
 
             _spriteBatch.Begin();
 
-            // Draw ball
-            _spriteBatch.Draw(_ballTexture, new Rectangle((int)_ballPosition.X, (int)_ballPosition.Y, BALL_WIDTH, BALL_HEIGHT), null, 
-                Color.White, 0.0f, Vector2.Zero, SpriteEffects.None, 0);
+            _paddle.Draw(_spriteBatch);
+            _ball.Draw(_spriteBatch);
 
-            // Draw player
-            _spriteBatch.Draw(_playerTexture, new Rectangle((int)_playerPosition.X, (int)_playerPosition.Y, PADDLE_WIDTH, PADDLE_HEIGHT), null, 
-                Color.White, 0.0f, new Vector2(_ballTexture.Width / 2, _ballTexture.Height / 2), SpriteEffects.None, 0);
-
-            // Draw bricks
-            for (int i = 0; i < WINDOW_WIDTH / BRICK_WIDTH; i++)
+            foreach (Brick brick in _bricks)
             {
-                for (int j = 0; j < _brickColors.Count; j++)
-                {
-                    _spriteBatch.Draw(_brickTextures[_brickColors[j]], new Rectangle(i * BRICK_WIDTH, j * BRICK_HEIGHT, BRICK_WIDTH, BRICK_HEIGHT), null,
-                        Color.White, 0.0f, Vector2.Zero, SpriteEffects.None, 0);
-                }
+                brick.Draw(_spriteBatch);
             }
 
             _spriteBatch.End();
